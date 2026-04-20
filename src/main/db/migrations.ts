@@ -110,6 +110,7 @@ export function runMigrations(db: Database.Database): void {
   migrateAddFilterTokenColumns(db)
   migrateAddSourceColumn(db)
   migrateAddChatMessagesTable(db)
+  migrateAddAiRequestLogsTable(db)
 }
 
 /**
@@ -160,4 +161,35 @@ export function migrateAddFilterTokenColumns(db: Database.Database): void {
       }
     }
   }
+}
+
+/**
+ * Migration 009: Add ai_request_logs table for recording LLM HTTP requests
+ * Safe to call multiple times (uses IF NOT EXISTS).
+ */
+export function migrateAddAiRequestLogsTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ai_request_logs (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id        TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+      report_id         TEXT REFERENCES analysis_reports(id) ON DELETE SET NULL,
+      type              TEXT NOT NULL,
+      provider          TEXT NOT NULL,
+      model             TEXT NOT NULL,
+      request_url       TEXT NOT NULL,
+      request_method    TEXT NOT NULL DEFAULT 'POST',
+      request_headers   TEXT NOT NULL,
+      request_body      TEXT NOT NULL,
+      status_code       INTEGER,
+      response_headers  TEXT,
+      response_body     TEXT,
+      prompt_tokens     INTEGER DEFAULT 0,
+      completion_tokens INTEGER DEFAULT 0,
+      duration_ms       INTEGER,
+      error             TEXT,
+      created_at        INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_logs_session ON ai_request_logs(session_id);
+    CREATE INDEX IF NOT EXISTS idx_ai_logs_created ON ai_request_logs(created_at);
+  `)
 }
