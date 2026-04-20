@@ -115,6 +115,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   exportRequests: (sessionId: string) =>
     ipcRenderer.invoke("data:exportRequests", sessionId),
 
+  // AI Request Logs
+  getAiRequestLogs: (sessionId: string) => ipcRenderer.invoke("data:aiRequestLogs", sessionId),
+  getAiRequestLogsAll: (limit: number, offset: number) => ipcRenderer.invoke("data:aiRequestLogsAll", limit, offset),
+  getAiRequestLogDetail: (id: number) => ipcRenderer.invoke("data:aiRequestLogDetail", id),
+
   // Proxy
   getProxyConfig: () => ipcRenderer.invoke("proxy:get"),
   saveProxyConfig: (config: unknown) =>

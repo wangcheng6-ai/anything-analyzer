@@ -116,6 +116,7 @@ app.whenReady().then(async () => {
     reportsRepo,
     chatMessagesRepo,
     profileStore,
+    aiRequestLogRepo,
   });
 
   // Check for updates on startup (non-blocking, delayed 3s)

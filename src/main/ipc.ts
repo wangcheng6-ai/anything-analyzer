@@ -30,6 +30,7 @@ import type {
   AnalysisReportsRepo,
   SessionsRepo,
   ChatMessagesRepo,
+  AiRequestLogRepo,
 } from "./db/repositories";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
@@ -60,6 +61,7 @@ export function registerIpcHandlers(deps: {
   reportsRepo: AnalysisReportsRepo;
   chatMessagesRepo: ChatMessagesRepo;
   profileStore: ProfileStore;
+  aiRequestLogRepo: AiRequestLogRepo;
 }): void {
   const {
     sessionManager,
@@ -76,6 +78,7 @@ export function registerIpcHandlers(deps: {
     reportsRepo,
     chatMessagesRepo,
     profileStore,
+    aiRequestLogRepo,
   } = deps;
 
   // ---- Session Management ----
@@ -357,7 +360,7 @@ export function registerIpcHandlers(deps: {
       }
 
       try {
-        const reply = await aiAnalyzer.chat(sessionId, config, history, userMessage, onProgress);
+        const reply = await aiAnalyzer.chat(sessionId, config, history, userMessage, onProgress, reportId);
 
         // Persist user message and AI reply to database
         if (reportId) {
@@ -495,6 +498,20 @@ export function registerIpcHandlers(deps: {
     if (canceled || !filePath) return false;
     writeFileSync(filePath, JSON.stringify(requests, null, 2), "utf-8");
     return true;
+  });
+
+  // ---- AI Request Logs ----
+
+  ipcMain.handle("data:aiRequestLogs", async (_event, sessionId: string) => {
+    return aiRequestLogRepo.findBySession(sessionId);
+  });
+
+  ipcMain.handle("data:aiRequestLogsAll", async (_event, limit: number, offset: number) => {
+    return aiRequestLogRepo.findAll(limit, offset);
+  });
+
+  ipcMain.handle("data:aiRequestLogDetail", async (_event, id: number) => {
+    return aiRequestLogRepo.findById(id);
   });
 
   // ---- Proxy ----
