@@ -1,4 +1,4 @@
-# Anything Analyzer v3.5.2
+# Anything Analyzer v3.5.3
 
 ## 修复
 
@@ -16,7 +16,7 @@
 
 | 平台 | 文件 |
 |------|------|
-| Windows | `Anything-Analyzer-Setup-3.5.2.exe` |
-| macOS (Apple Silicon) | `Anything-Analyzer-3.5.2-arm64.dmg` |
-| macOS (Intel) | `Anything-Analyzer-3.5.2-x64.dmg` |
-| Linux | `Anything-Analyzer-3.5.2.AppImage` |
+| Windows | `Anything-Analyzer-Setup-3.5.3.exe` |
+| macOS (Apple Silicon) | `Anything-Analyzer-3.5.3-arm64.dmg` |
+| macOS (Intel) | `Anything-Analyzer-3.5.3-x64.dmg` |
+| Linux | `Anything-Analyzer-3.5.3.AppImage` |
