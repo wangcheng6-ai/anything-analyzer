@@ -260,3 +260,6 @@ Thanks to everyone on [LinuxDo](https://linux.do/) for their support!
 ## License
 
 MIT
+
+企鹅交流群：
+1091466461
