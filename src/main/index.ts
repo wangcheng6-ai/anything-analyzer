@@ -10,6 +10,7 @@ import {
   FingerprintProfilesRepo,
   ChatMessagesRepo,
   AiRequestLogRepo,
+  InteractionEventsRepo,
 } from "./db/repositories";
 import { CaptureEngine } from "./capture/capture-engine";
 import { SessionManager } from "./session/session-manager";
@@ -52,6 +53,7 @@ app.whenReady().then(async () => {
   const chatMessagesRepo = new ChatMessagesRepo(db);
   const fingerprintRepo = new FingerprintProfilesRepo(db);
   const aiRequestLogRepo = new AiRequestLogRepo(db);
+  const interactionEventsRepo = new InteractionEventsRepo(db);
   const profileStore = new ProfileStore(fingerprintRepo);
 
   // Initialize capture engine
@@ -62,7 +64,7 @@ app.whenReady().then(async () => {
   );
 
   // Initialize session manager
-  const sessionManager = new SessionManager(sessionsRepo, captureEngine, profileStore);
+  const sessionManager = new SessionManager(sessionsRepo, captureEngine, profileStore, interactionEventsRepo);
   sessionManagerRef = sessionManager;
 
   // Recover from potential crash
@@ -117,6 +119,7 @@ app.whenReady().then(async () => {
     chatMessagesRepo,
     profileStore,
     aiRequestLogRepo,
+    interactionEventsRepo,
   });
 
   // Check for updates on startup (non-blocking, delayed 3s)
@@ -126,7 +129,7 @@ app.whenReady().then(async () => {
   const mcpServerConfig = loadMCPServerConfig();
   if (mcpServerConfig.enabled) {
     initMCPServer(
-      { sessionManager, aiAnalyzer, windowManager, requestsRepo, jsHooksRepo, storageSnapshotsRepo, reportsRepo },
+      { sessionManager, aiAnalyzer, windowManager, requestsRepo, jsHooksRepo, storageSnapshotsRepo, reportsRepo, interactionEventsRepo },
       mcpServerConfig.port,
       mcpServerConfig.authEnabled,
       mcpServerConfig.authToken,

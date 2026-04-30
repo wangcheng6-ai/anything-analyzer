@@ -294,6 +294,68 @@ export interface MitmProxyStatus {
   systemProxyEnabled: boolean;
 }
 
+// ---- Interaction Recording ----
+
+export type InteractionType = 'click' | 'dblclick' | 'input' | 'scroll' | 'navigate' | 'hover';
+
+export interface InteractionEvent {
+  id: number;
+  session_id: string;
+  sequence: number;
+  type: InteractionType;
+  timestamp: number;
+  // Position
+  x: number | null;
+  y: number | null;
+  viewport_x: number | null;
+  viewport_y: number | null;
+  // Element
+  selector: string | null;
+  xpath: string | null;
+  tag_name: string | null;
+  element_text: string | null;
+  attributes: string | null;    // JSON
+  bounding_rect: string | null; // JSON
+  // Input
+  input_value: string | null;
+  key: string | null;
+  // Scroll
+  scroll_x: number | null;
+  scroll_y: number | null;
+  scroll_dx: number | null;
+  scroll_dy: number | null;
+  // Context
+  url: string;
+  page_title: string | null;
+  path: string | null;          // JSON: mouse move path [{x, y, t}...]
+  created_at: number;
+}
+
+/** Raw interaction data sent from page injection script to main process */
+export interface RawInteractionData {
+  type: InteractionType;
+  timestamp: number;
+  x?: number;
+  y?: number;
+  viewportX?: number;
+  viewportY?: number;
+  selector?: string;
+  xpath?: string;
+  tagName?: string;
+  elementText?: string;
+  attributes?: Record<string, string>;
+  boundingRect?: { x: number; y: number; width: number; height: number };
+  inputValue?: string;
+  key?: string;
+  scrollX?: number;
+  scrollY?: number;
+  scrollDX?: number;
+  scrollDY?: number;
+  url: string;
+  pageTitle?: string;
+  path?: Array<{ x: number; y: number; t: number }>;
+}
+
 // ---- Fingerprint Profile ----
 
 export interface FingerprintProfile {

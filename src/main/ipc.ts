@@ -31,6 +31,7 @@ import type {
   SessionsRepo,
   ChatMessagesRepo,
   AiRequestLogRepo,
+  InteractionEventsRepo,
 } from "./db/repositories";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
@@ -62,6 +63,7 @@ export function registerIpcHandlers(deps: {
   chatMessagesRepo: ChatMessagesRepo;
   profileStore: ProfileStore;
   aiRequestLogRepo: AiRequestLogRepo;
+  interactionEventsRepo: InteractionEventsRepo;
 }): void {
   const {
     sessionManager,
@@ -79,6 +81,7 @@ export function registerIpcHandlers(deps: {
     chatMessagesRepo,
     profileStore,
     aiRequestLogRepo,
+    interactionEventsRepo,
   } = deps;
 
   // ---- Session Management ----
@@ -682,6 +685,20 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle("fingerprint:disable", async () => {
     await sessionManager.disableStealth();
+  });
+
+  // ---- Interaction Recording ----
+
+  ipcMain.handle("interaction:getEvents", async (_event, sessionId: string, limit?: number) => {
+    return interactionEventsRepo.findBySession(sessionId, limit ?? 1000);
+  });
+
+  ipcMain.handle("interaction:getCount", async (_event, sessionId: string) => {
+    return interactionEventsRepo.count(sessionId);
+  });
+
+  ipcMain.handle("interaction:clear", async (_event, sessionId: string) => {
+    interactionEventsRepo.deleteBySession(sessionId);
   });
 }
 

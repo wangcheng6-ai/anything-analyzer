@@ -18,9 +18,11 @@ import type {
   JsHooksRepo,
   StorageSnapshotsRepo,
   AnalysisReportsRepo,
+  InteractionEventsRepo,
 } from "../db/repositories";
-import type { ChatMessage } from "@shared/types";
+import type { ChatMessage, InteractionType } from "@shared/types";
 import { loadLLMConfig } from "../ipc";
+import { ReplayEngine } from "../capture/replay-engine";
 
 interface MCPServerDeps {
   sessionManager: SessionManager;
@@ -30,6 +32,7 @@ interface MCPServerDeps {
   jsHooksRepo: JsHooksRepo;
   storageSnapshotsRepo: StorageSnapshotsRepo;
   reportsRepo: AnalysisReportsRepo;
+  interactionEventsRepo: InteractionEventsRepo;
 }
 
 let httpServer: Server | null = null;
@@ -244,6 +247,7 @@ function registerTools(server: McpServer, deps: MCPServerDeps): void {
     jsHooksRepo,
     storageSnapshotsRepo,
     reportsRepo,
+    interactionEventsRepo,
   } = deps;
 
   // -- Session Management --
@@ -731,6 +735,196 @@ function registerTools(server: McpServer, deps: MCPServerDeps): void {
       history.push({ role: "assistant" as const, content: reply });
 
       return text({ reply });
+    },
+  );
+
+  // -- Interaction Recording --
+
+  const replayEngine = new ReplayEngine();
+
+  server.registerTool(
+    "get_interactions",
+    {
+      description:
+        "Get recorded user interaction events (clicks, inputs, scrolls, mouse movements) for a session. " +
+        "Returns element selectors, positions, input values, and timestamps.",
+      inputSchema: z.object({
+        sessionId: z.string().describe("Session ID"),
+        type: z.enum(['click', 'dblclick', 'input', 'scroll', 'navigate', 'hover']).optional().describe("Filter by interaction type"),
+        limit: z.number().default(100).describe("Max events to return"),
+      }),
+    },
+    async ({ sessionId, type, limit }) => {
+      const events = type
+        ? interactionEventsRepo.findBySessionAndType(sessionId, type as InteractionType)
+        : interactionEventsRepo.findBySession(sessionId, limit);
+      return text(events.slice(0, limit));
+    },
+  );
+
+  server.registerTool(
+    "get_interaction_summary",
+    {
+      description:
+        "Get a high-level summary of recorded interactions: action sequence, key elements, and navigation flow. " +
+        "Useful for understanding what the user did before asking AI to automate it.",
+      inputSchema: z.object({ sessionId: z.string() }),
+    },
+    async ({ sessionId }) => {
+      const events = interactionEventsRepo.findBySession(sessionId, 500);
+      if (events.length === 0) {
+        return text({ summary: "No interactions recorded for this session.", steps: [] });
+      }
+
+      // Generate human-readable summary
+      const steps: string[] = [];
+      let stepNum = 1;
+      for (const event of events) {
+        if (event.type === 'hover') continue; // skip movement in summary
+        let desc = '';
+        switch (event.type) {
+          case 'click':
+          case 'dblclick': {
+            const target = event.element_text || event.selector || `(${event.x}, ${event.y})`;
+            desc = `${event.type === 'dblclick' ? 'Double-click' : 'Click'} "${target}" [${event.tag_name || 'element'}]`;
+            break;
+          }
+          case 'input': {
+            const field = event.selector || event.tag_name || 'input';
+            desc = `Type "${event.input_value}" into ${field}`;
+            break;
+          }
+          case 'scroll': {
+            desc = `Scroll to (${event.scroll_x}, ${event.scroll_y})`;
+            break;
+          }
+          case 'navigate': {
+            desc = `Navigate to ${event.url}`;
+            break;
+          }
+        }
+        if (desc) {
+          steps.push(`${stepNum++}. ${desc}`);
+        }
+      }
+
+      return text({
+        totalEvents: events.length,
+        clickCount: events.filter(e => e.type === 'click' || e.type === 'dblclick').length,
+        inputCount: events.filter(e => e.type === 'input').length,
+        scrollCount: events.filter(e => e.type === 'scroll').length,
+        pagesVisited: [...new Set(events.map(e => e.url))],
+        steps,
+      });
+    },
+  );
+
+  server.registerTool(
+    "replay_interactions",
+    {
+      description:
+        "Replay recorded user interactions in the browser via CDP Input simulation. " +
+        "Reproduces clicks, inputs, scrolls in the original sequence.",
+      inputSchema: z.object({
+        sessionId: z.string().describe("Session ID with recorded interactions"),
+        speed: z.number().default(2).describe("Playback speed multiplier (2 = 2x faster)"),
+        fromSequence: z.number().optional().describe("Start from this sequence number"),
+        toSequence: z.number().optional().describe("Stop at this sequence number"),
+        skipMoves: z.boolean().default(true).describe("Skip mouse movement events"),
+      }),
+    },
+    async ({ sessionId, speed, fromSequence, toSequence, skipMoves }) => {
+      const webContents = windowManager.getTabManager()?.getActiveWebContents();
+      if (!webContents) throw new Error("Browser not ready");
+
+      let events = interactionEventsRepo.findBySession(sessionId, 10000);
+      if (fromSequence != null) events = events.filter(e => e.sequence >= fromSequence);
+      if (toSequence != null) events = events.filter(e => e.sequence <= toSequence);
+
+      if (events.length === 0) return text({ error: "No interactions to replay" });
+
+      const result = await replayEngine.replay(webContents, events, { speed, skipMoves });
+      return text(result);
+    },
+  );
+
+  server.registerTool(
+    "execute_browser_action",
+    {
+      description:
+        "Execute a single browser action: click an element, type text, scroll, or navigate. " +
+        "Use CSS selectors from interaction recordings or get_page_elements to target elements.",
+      inputSchema: z.object({
+        action: z.enum(['click', 'type', 'scroll', 'navigate']).describe("Action to perform"),
+        selector: z.string().optional().describe("CSS selector of target element (for click/type)"),
+        text: z.string().optional().describe("Text to type (for 'type' action)"),
+        url: z.string().optional().describe("URL to navigate (for 'navigate' action)"),
+        x: z.number().optional().describe("X coordinate (for click without selector)"),
+        y: z.number().optional().describe("Y coordinate (for click without selector)"),
+        scrollDelta: z.number().optional().describe("Scroll delta in pixels (for 'scroll' action, positive=down)"),
+      }),
+    },
+    async ({ action, selector, text: inputText, url, x, y, scrollDelta }) => {
+      const webContents = windowManager.getTabManager()?.getActiveWebContents();
+      if (!webContents) throw new Error("Browser not ready");
+      const result = await replayEngine.executeAction(webContents, {
+        type: action, selector, text: inputText, url, x, y, scrollDelta,
+      });
+      return text(result);
+    },
+  );
+
+  server.registerTool(
+    "get_page_elements",
+    {
+      description:
+        "Get interactive elements on the current page with their CSS selectors, text content, and bounding boxes. " +
+        "Use this to discover what elements are available before executing browser actions.",
+      inputSchema: z.object({
+        filter: z.enum(['all', 'clickable', 'inputs', 'links', 'buttons']).default('clickable')
+          .describe("Element filter: 'clickable' for buttons/links/interactive, 'inputs' for form fields"),
+      }),
+    },
+    async ({ filter }) => {
+      const webContents = windowManager.getTabManager()?.getActiveWebContents();
+      if (!webContents) throw new Error("Browser not ready");
+
+      const selectorMap: Record<string, string> = {
+        all: 'a, button, input, select, textarea, [role="button"], [onclick], [tabindex]',
+        clickable: 'a, button, [role="button"], [onclick], [tabindex]:not(input):not(textarea)',
+        inputs: 'input, select, textarea',
+        links: 'a[href]',
+        buttons: 'button, [role="button"], input[type="submit"], input[type="button"]',
+      };
+
+      const result = await webContents.executeJavaScript(`
+        (function() {
+          const selector = ${JSON.stringify(selectorMap[filter] || selectorMap.clickable)};
+          const elements = Array.from(document.querySelectorAll(selector)).slice(0, 50);
+          return elements.map(el => {
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 && rect.height === 0) return null; // hidden
+            const id = el.id && !(/[0-9a-f]{8,}|_\\d+$|^:r\\d+:|^ember\\d+/.test(el.id))
+              ? '#' + el.id : null;
+            const testId = el.getAttribute('data-testid');
+            const selector = id || (testId ? '[data-testid=\"' + testId + '\"]' : null)
+              || (el.className && typeof el.className === 'string'
+                ? el.tagName.toLowerCase() + '.' + el.className.trim().split(/\\s+/).slice(0,2).join('.')
+                : el.tagName.toLowerCase());
+            return {
+              selector,
+              tag: el.tagName.toLowerCase(),
+              type: el.getAttribute('type'),
+              text: (el.textContent || '').trim().slice(0, 80),
+              placeholder: el.getAttribute('placeholder'),
+              href: el.getAttribute('href'),
+              rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+            };
+          }).filter(Boolean);
+        })()
+      `, true);
+
+      return text(result);
     },
   );
 }

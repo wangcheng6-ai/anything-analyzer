@@ -111,6 +111,7 @@ export function runMigrations(db: Database.Database): void {
   migrateAddSourceColumn(db)
   migrateAddChatMessagesTable(db)
   migrateAddAiRequestLogsTable(db)
+  migrateAddInteractionEventsTable(db)
 }
 
 /**
@@ -191,5 +192,44 @@ export function migrateAddAiRequestLogsTable(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_ai_logs_session ON ai_request_logs(session_id);
     CREATE INDEX IF NOT EXISTS idx_ai_logs_created ON ai_request_logs(created_at);
+  `)
+}
+
+/**
+ * Migration 010: Add interaction_events table for recording user interactions
+ * Safe to call multiple times (uses IF NOT EXISTS).
+ */
+export function migrateAddInteractionEventsTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS interaction_events (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      sequence      INTEGER NOT NULL,
+      type          TEXT NOT NULL,
+      timestamp     INTEGER NOT NULL,
+      x             REAL,
+      y             REAL,
+      viewport_x    REAL,
+      viewport_y    REAL,
+      selector      TEXT,
+      xpath         TEXT,
+      tag_name      TEXT,
+      element_text  TEXT,
+      attributes    TEXT,
+      bounding_rect TEXT,
+      input_value   TEXT,
+      key           TEXT,
+      scroll_x      REAL,
+      scroll_y      REAL,
+      scroll_dx     REAL,
+      scroll_dy     REAL,
+      url           TEXT NOT NULL,
+      page_title    TEXT,
+      path          TEXT,
+      created_at    INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_interactions_session ON interaction_events(session_id);
+    CREATE INDEX IF NOT EXISTS idx_interactions_session_seq ON interaction_events(session_id, sequence);
+    CREATE INDEX IF NOT EXISTS idx_interactions_type ON interaction_events(session_id, type);
   `)
 }

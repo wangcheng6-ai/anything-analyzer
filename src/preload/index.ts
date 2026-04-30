@@ -7,6 +7,9 @@ window.addEventListener("message", (event) => {
   if (event.data?.type === "ar-hook") {
     ipcRenderer.send("capture:hook-data", event.data);
   }
+  if (event.data?.type === "ar-interaction") {
+    ipcRenderer.send("capture:hook-data", event.data);
+  }
 });
 
 // Expose IPC APIs to renderer

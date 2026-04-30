@@ -7,6 +7,8 @@ import type {
   AnalysisReport,
   FingerprintProfile,
   AiRequestLog,
+  InteractionEvent,
+  InteractionType,
 } from '@shared/types'
 
 // ============================================================
@@ -493,5 +495,80 @@ export class AiRequestLogRepo {
 
   updateLatestTokens(sessionId: string, type: string, promptTokens: number, completionTokens: number): void {
     this.stmts.updateTokens.run(promptTokens, completionTokens, sessionId, type);
+  }
+}
+
+// ============================================================
+// Interaction Events Repository
+// ============================================================
+
+export class InteractionEventsRepo {
+  private stmts: {
+    insert: Database.Statement;
+    getNextSequence: Database.Statement;
+    findBySession: Database.Statement;
+    findBySessionAndType: Database.Statement;
+    findById: Database.Statement;
+    deleteBySession: Database.Statement;
+    count: Database.Statement;
+  };
+
+  constructor(private db: Database.Database) {
+    this.stmts = {
+      insert: db.prepare(
+        `INSERT INTO interaction_events
+         (session_id, sequence, type, timestamp, x, y, viewport_x, viewport_y,
+          selector, xpath, tag_name, element_text, attributes, bounding_rect,
+          input_value, key, scroll_x, scroll_y, scroll_dx, scroll_dy,
+          url, page_title, path, created_at)
+         VALUES
+         (@session_id, @sequence, @type, @timestamp, @x, @y, @viewport_x, @viewport_y,
+          @selector, @xpath, @tag_name, @element_text, @attributes, @bounding_rect,
+          @input_value, @key, @scroll_x, @scroll_y, @scroll_dx, @scroll_dy,
+          @url, @page_title, @path, @created_at)`
+      ),
+      getNextSequence: db.prepare(
+        'SELECT COALESCE(MAX(sequence), 0) + 1 AS next_seq FROM interaction_events WHERE session_id = ?'
+      ),
+      findBySession: db.prepare(
+        'SELECT * FROM interaction_events WHERE session_id = ? ORDER BY sequence ASC LIMIT ?'
+      ),
+      findBySessionAndType: db.prepare(
+        'SELECT * FROM interaction_events WHERE session_id = ? AND type = ? ORDER BY sequence ASC'
+      ),
+      findById: db.prepare('SELECT * FROM interaction_events WHERE id = ?'),
+      deleteBySession: db.prepare('DELETE FROM interaction_events WHERE session_id = ?'),
+      count: db.prepare('SELECT COUNT(*) AS cnt FROM interaction_events WHERE session_id = ?'),
+    };
+  }
+
+  insert(event: Omit<InteractionEvent, 'id'>): void {
+    this.stmts.insert.run(event);
+  }
+
+  getNextSequence(sessionId: string): number {
+    const row = this.stmts.getNextSequence.get(sessionId) as { next_seq: number };
+    return row.next_seq;
+  }
+
+  findBySession(sessionId: string, limit: number = 1000): InteractionEvent[] {
+    return this.stmts.findBySession.all(sessionId, limit) as InteractionEvent[];
+  }
+
+  findBySessionAndType(sessionId: string, type: InteractionType): InteractionEvent[] {
+    return this.stmts.findBySessionAndType.all(sessionId, type) as InteractionEvent[];
+  }
+
+  findById(id: number): InteractionEvent | null {
+    return (this.stmts.findById.get(id) as InteractionEvent) ?? null;
+  }
+
+  deleteBySession(sessionId: string): void {
+    this.stmts.deleteBySession.run(sessionId);
+  }
+
+  count(sessionId: string): number {
+    const row = this.stmts.count.get(sessionId) as { cnt: number };
+    return row.cnt;
   }
 }
